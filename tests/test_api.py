@@ -295,14 +295,17 @@ class TestUndefined:
         logging_undefined = make_logging_undefined(DebugLogger())
         env = Environment(undefined=logging_undefined)
         assert env.from_string("{{ missing }}").render() == ""
-        pytest.raises(UndefinedError, env.from_string("{{ missing.attribute }}").render)
+        #CB change
+        # due to the change in variable resolution this would become ""
+        # and not raise an error.
+        assert env.from_string("{{ missing.attribute }}").render() == ""
         assert env.from_string("{{ missing|list }}").render() == "[]"
         assert env.from_string("{{ missing is not defined }}").render() == "True"
         assert env.from_string("{{ foo.missing }}").render(foo=42) == ""
         assert env.from_string("{{ not missing }}").render() == "True"
         assert _messages == [
             "W:Template variable warning: 'missing' is undefined",
-            "E:Template variable error: 'missing' is undefined",
+            "W:Template variable warning: 'missing' is undefined",
             "W:Template variable warning: 'missing' is undefined",
             "W:Template variable warning: 'int object' has no attribute 'missing'",
             "W:Template variable warning: 'missing' is undefined",
@@ -311,7 +314,10 @@ class TestUndefined:
     def test_default_undefined(self):
         env = Environment(undefined=Undefined)
         assert env.from_string("{{ missing }}").render() == ""
-        pytest.raises(UndefinedError, env.from_string("{{ missing.attribute }}").render)
+        #CB Change
+        # due to the change in variable resolution this would become ""
+        # and not raise an error.
+        assert env.from_string("{{ missing.attribute }}").render() == ""
         assert env.from_string("{{ missing|list }}").render() == "[]"
         assert env.from_string("{{ missing is not defined }}").render() == "True"
         assert env.from_string("{{ foo.missing }}").render(foo=42) == ""
@@ -354,7 +360,10 @@ class TestUndefined:
     def test_debug_undefined(self):
         env = Environment(undefined=DebugUndefined)
         assert env.from_string("{{ missing }}").render() == "{{ missing }}"
-        pytest.raises(UndefinedError, env.from_string("{{ missing.attribute }}").render)
+        #CB Change
+        # due to the change in variable resolution this would become "{{ missing }}"
+        # per the DebugUndefined and not raise an error.
+        assert env.from_string("{{ missing.attribute }}").render() == "{{ missing }}"
         assert env.from_string("{{ missing|list }}").render() == "[]"
         assert env.from_string("{{ missing is not defined }}").render() == "True"
         assert (

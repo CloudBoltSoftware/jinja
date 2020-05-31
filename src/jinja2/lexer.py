@@ -329,7 +329,9 @@ class TokenStream:
 
     def push(self, token):
         """Push a token back to the stream."""
-        self._pushed.append(token)
+        # CB Change.  Found that if you were pushing more than one token onto the stack
+        # it was getting pulled in backwards order.
+        self._pushed.appendleft(token)
 
     def look(self):
         """Look at the next token."""

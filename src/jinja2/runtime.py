@@ -118,6 +118,12 @@ def _get_func(x):
     return getattr(x, "__func__", x)
 
 
+# special singleton representing missing values for the runtime, used for the
+# resovle_or_missing and recurse_keys to represent a variable not found.
+variable_not_found = type("VariableNotFound", (),
+                          {"__repr__": lambda x: "variable_not_found"})()
+
+
 class ContextMeta(type):
     def __new__(mcs, name, bases, d):
         rv = type.__new__(mcs, name, bases, d)
@@ -146,11 +152,43 @@ class ContextMeta(type):
 
 
 def resolve_or_missing(context, key, missing=missing):
-    if key in context.vars:
-        return context.vars[key]
-    if key in context.parent:
-        return context.parent[key]
-    return missing
+    """ CB Change to support dots in names with overlapping key values.
+    Resolves keys from longest/deepest match to shortest.
+    """
+    val = recurse_keys({**context.parent, **context.vars}, key, context.environment)
+    if val is variable_not_found:
+        return missing
+    else:
+        return val
+
+
+def recurse_keys(vars, primary_key, env):
+    if vars is not None:
+        primary_keys = primary_key.split(".")
+        for i in reversed(range(1, len(primary_keys) + 1)):
+            pkeys = primary_keys[0:i]
+            rkeys = primary_keys[i:]
+            primary = ".".join(pkeys)
+            remainder = ".".join(rkeys)
+            # there is no remainder it is either in the dict or not.
+            if primary in vars:
+                if len(rkeys) == 0:
+                    return vars[primary]
+                elif isinstance(vars[primary], dict):
+                    val = recurse_keys(vars[primary], remainder, env)
+                    # we need to continue recursion if the recursive call returns none.
+                    if val is not variable_not_found:
+                        return val
+                else:
+                    # we may have an attribute here, see if you can get the attribute, and then recurse
+                    # using that attribute.
+                    if len(rkeys) > 1 and env.getattr(vars[primary], rkeys[0]):
+                        val = recurse_keys(env.getattr(vars[primary], rkeys[0]), ".".join(rkeys[1:]), env)
+                        if val is not variable_not_found:
+                            return val
+                    else:
+                        return env.getattr(vars[primary], remainder)
+    return variable_not_found
 
 
 @abc.Mapping.register

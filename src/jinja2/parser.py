@@ -51,6 +51,15 @@ class Parser:
         self._last_identifier = 0
         self._tag_stack = []
         self._end_token_stack = []
+        # Tracking of local variables, so they are parsed correctly, local variables
+        # can not be attributes/nested values.
+        self.local_vars = []
+        # used to change parse_primary behavior, assignments can not be to
+        # attributes/nested values, only to local variables.
+        self.in_assign_vars = False
+        # Used to check for the special loop variable, if it is the loop variable, then
+        # put it into the local_vars stack.
+        self.in_parse_for = False
 
     def fail(self, msg, lineno=None, exc=TemplateSyntaxError):
         """Convenience method that raises `exc` with the message, passed
@@ -193,6 +202,7 @@ class Parser:
 
     def parse_for(self):
         """Parse a for loop."""
+        self.in_parse_for = True
         lineno = self.stream.expect("name:for").lineno
         target = self.parse_assign_target(extra_end_rules=("name:in",))
         self.stream.expect("name:in")
@@ -208,6 +218,7 @@ class Parser:
             else_ = []
         else:
             else_ = self.parse_statements(("name:endfor",), drop_needle=True)
+        self.in_parse_for = False
         return nodes.For(target, iter, body, else_, test, recursive, lineno=lineno)
 
     def parse_if(self):
@@ -412,22 +423,29 @@ class Parser:
         parameter is forwarded to the tuple parsing function.  If
         `with_namespace` is enabled, a namespace assignment may be parsed.
         """
+        self.in_assign_vars = True
         if with_namespace and self.stream.look().type == "dot":
             token = self.stream.expect("name")
             next(self.stream)  # dot
             attr = self.stream.expect("name")
             target = nodes.NSRef(token.value, attr.value, lineno=token.lineno)
+            self.local_vars.append(f"{token.value}.{attr.value}")
         elif name_only:
             token = self.stream.expect("name")
             target = nodes.Name(token.value, "store", lineno=token.lineno)
+            self.local_vars.append(token.value)
         else:
+
             if with_tuple:
                 target = self.parse_tuple(
-                    simplified=True, extra_end_rules=extra_end_rules
+                    simplified=True, extra_end_rules=extra_end_rules, assignment=True
                 )
             else:
                 target = self.parse_primary()
+                self.local_vars.append(target)
             target.set_ctx("store")
+        self.in_assign_vars = False
+
         if not target.can_assign():
             self.fail(
                 f"can't assign to {target.__class__.__name__.lower()!r}", target.lineno
@@ -561,16 +579,41 @@ class Parser:
             node = self.parse_filter_expr(node)
         return node
 
-    def parse_primary(self):
+    def parse_primary(self, extra_end_rules=None):
         token = self.stream.current
         if token.type == "name":
             if token.value in ("true", "false", "True", "False"):
                 node = nodes.Const(token.value in ("true", "True"), lineno=token.lineno)
             elif token.value in ("none", "None"):
                 node = nodes.Const(None, lineno=token.lineno)
-            else:
+            elif self.in_assign_vars or self.in_parse_for:
                 node = nodes.Name(token.value, "load", lineno=token.lineno)
+                self.local_vars.append(token.value)
+            else:
+                # CB Change to support dots in names with overlapping key values.
+                # Return the entire name with dots, let the resolve funcution
+                # resolve the values at runtime.
+                # If extra_end_rules is passed, we are getting hte key or value, which can not be dotted below.
+                if token.value in self.local_vars:
+                    node = nodes.Name(token.value, "load", lineno=token.lineno)
+                else:
+                    name = token.value
+                    current_token = None
+                    next_token = None
+                    while self.stream.look().type == "dot":
+                        current_token = next(self.stream)  # get dot token as current
+                        if self.stream.look().type == "name":
+                            next_token = next(self.stream)  # dot token
+                            if self.stream.look().type != "lparen":
+                                name += "." + self.stream.current.value
+                            else:
+                                self.stream.push(self.stream.current)
+                                self.stream.push(next_token)
+                                self.stream.current = current_token
+                                break
+                    node = nodes.Name(name, "load", lineno=token.lineno)
             next(self.stream)
+
         elif token.type == "string":
             next(self.stream)
             buf = [token.value]
@@ -600,6 +643,7 @@ class Parser:
         with_condexpr=True,
         extra_end_rules=None,
         explicit_parentheses=False,
+        assignment=False
     ):
         """Works like `parse_expression` but if multiple expressions are
         delimited by a comma a :class:`~jinja2.nodes.Tuple` node is created.
@@ -637,6 +681,8 @@ class Parser:
             if self.is_tuple_end(extra_end_rules):
                 break
             args.append(parse())
+            if assignment and hasattr(args[-1],"name"):
+                self.local_vars.append(args[-1].name)
             if self.stream.current.type == "comma":
                 is_tuple = True
             else:
@@ -901,9 +947,11 @@ class Parser:
                         add_data(nodes.TemplateData(token.value, lineno=token.lineno))
                     next(self.stream)
                 elif token.type == "variable_begin":
+                    self.in_variable_parse = True
                     next(self.stream)
                     add_data(self.parse_tuple(with_condexpr=True))
                     self.stream.expect("variable_end")
+                    self.in_variable_parse = False
                 elif token.type == "block_begin":
                     flush_data()
                     next(self.stream)

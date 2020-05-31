@@ -1,4 +1,5 @@
 """Compiles nodes from the parser into Python code."""
+import re
 from collections import namedtuple
 from functools import update_wrapper
 from io import StringIO
@@ -222,6 +223,9 @@ class CodeGenerator(NodeVisitor):
         self.created_block_context = False
         self.defer_init = defer_init
         self.optimized = optimized
+        # Local Vars is used to track local variables so they are writting correctly
+        # by the compiler.
+        self.local_vars = []
         if optimized:
             self.optimizer = Optimizer(environment)
 
@@ -444,7 +448,17 @@ class CodeGenerator(NodeVisitor):
             if action == VAR_LOAD_PARAMETER:
                 pass
             elif action == VAR_LOAD_RESOLVE:
-                self.writeline(f"{target} = {self.get_resolve_func()}({param!r})")
+                #cb change
+                # We need to see if the variable is in the local vars, if it is
+                # then we only write it as is.
+                parts = param.split(".")
+                if parts[0] in self.local_vars :
+                    self.writeline( f"{target} = {param!r}")
+                else:
+                    #if it is not a local var, we need to remove the dots, so the
+                    #resolve function can store the data into the variable.
+                    target = target.replace(".", "_")
+                    self.writeline(f"{target} = {self.get_resolve_func()}({param!r})")
             elif action == VAR_LOAD_ALIAS:
                 self.writeline(f"{target} = {param}")
             elif action == VAR_LOAD_UNDEFINED:
@@ -644,6 +658,10 @@ class CodeGenerator(NodeVisitor):
         if len(vars) == 1:
             name = next(iter(vars))
             ref = frame.symbols.ref(name)
+            # special case where we need to remove the variable from the local_vars
+            # and resolve it from context_vars.
+            if name in self.local_vars:
+                self.local_vars.remove(name)
             self.writeline(f"context.vars[{name!r}] = {ref}")
         else:
             self.writeline("context.vars.update({")
@@ -1005,6 +1023,7 @@ class CodeGenerator(NodeVisitor):
 
         loop_ref = None
         if extended_loop:
+            self.local_vars.append('loop')
             loop_ref = loop_frame.symbols.declare_parameter("loop")
 
         loop_frame.symbols.analyze_node(node, for_branch="body")
@@ -1368,6 +1387,7 @@ class CodeGenerator(NodeVisitor):
     def visit_Assign(self, node, frame):
         self.push_assign_tracking()
         self.newline(node)
+        self.local_vars.append(node.target.name)
         self.visit(node.target, frame)
         self.write(" = ")
         self.visit(node.node, frame)
@@ -1386,6 +1406,7 @@ class CodeGenerator(NodeVisitor):
         self.blockvisit(node.body, block_frame)
         self.newline(node)
         self.visit(node.target, frame)
+        self.local_vars.append(node.target.name)
         self.write(" = (Markup if context.eval_ctx.autoescape else identity)(")
         if node.filter is not None:
             self.visit_Filter(node.filter, block_frame)
@@ -1397,11 +1418,17 @@ class CodeGenerator(NodeVisitor):
 
     # -- Expression Visitors
 
+    # get the primary base variable name
+    def base_name(self, name):
+        return name.split(".")[0]
+
+
     def visit_Name(self, node, frame):
         if node.ctx == "store" and frame.toplevel:
             if self._assign_stack:
                 self._assign_stack[-1].add(node.name)
-        ref = frame.symbols.ref(node.name)
+        #CB Change for variables with .
+        ref = frame.symbols.ref(node.name).replace(".", "_")
 
         # If we are looking up a variable we might have to deal with the
         # case where it's undefined.  We can skip that case if the load
@@ -1414,7 +1441,8 @@ class CodeGenerator(NodeVisitor):
                 and not self.parameter_is_undeclared(ref)
             ):
                 self.write(
-                    f"(undefined(name={node.name!r}) if {ref} is missing else {ref})"
+                    f"(undefined(name={self.base_name(node.name)!r}) if {ref} is "
+                    f"missing else {ref}) "
                 )
                 return
 

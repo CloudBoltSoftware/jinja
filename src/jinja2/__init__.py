@@ -40,4 +40,4 @@ from .utils import evalcontextfunction
 from .utils import is_undefined
 from .utils import select_autoescape
 
-__version__ = "3.0.0a1-cb"
+__version__ = "3.0.0a1cb"

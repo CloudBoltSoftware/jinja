@@ -7,7 +7,7 @@ with open("src/jinja2/__init__.py", "rt", encoding="utf8") as f:
     version = re.search(r'__version__ = "(.*?)"', f.read(), re.M).group(1)
 
 setup(
-    name="Jinja2-cb",
+    name="Jinja2",
     version=version,
     url="https://palletsprojects.com/p/jinja/",
     project_urls={

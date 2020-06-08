@@ -10,6 +10,7 @@ class Attributes:
     def myfunc(self):
         return "myfunc is called"
 
+
 class TestDottedNames:
 
     def test_full_dot_key_match(self):
@@ -54,9 +55,33 @@ class TestDottedNames:
         assert out == str({"next": "next level", "next.thing": "thing"})
 
     def test_names(self):
-        t = Template("{{ environment[0]|lower }}{{ platform[0:2]|lower}}{{ team[0]|lower "
-                     "}}{{ app|lower }}{% if os|lower == 'windows' %}11{% elif os|lower == "
-                     "'linux' %}15{% else %}17{% endif %}{{ sequence.MySequence }}")
-        dict = { "environment": "PROD", "platform": "Azure", "team": "DevOps", "os": "Windows", "app": "Web", "sequence.MySequence": "001"}
+        t = Template(
+            "{{ environment[0]|lower }}{{ platform[0:2]|lower}}{{ team[0]|lower "
+            "}}{{ app|lower }}{% if os|lower == 'windows' %}11{% elif os|lower == "
+            "'linux' %}15{% else %}17{% endif %}{{ sequence.MySequence }}")
+        dict = {"environment": "PROD", "platform": "Azure", "team": "DevOps",
+                "os": "Windows", "app": "Web", "sequence.MySequence": "001"}
         out = t.render(dict)
         assert out == "pazdweb11001"
+
+    def test_for(self):
+        template_test1 = "FOR:{% for key,val in level1.level2.level3.level4.level5.items() %} KEY: {{ key }} VAL: {{ val }} {% endfor %}"
+
+        result_test1 = "FOR: KEY: message VAL: Hello, World 2! "
+
+        dict = {
+            "level1.level2": {
+                "level3.level4.level5": {
+                    "message": "Hello, World!"
+                }
+            },
+            "level1.level2.level3": {
+                "level4.level5": {
+                    "message": "Hello, World 2!"
+                }
+            }
+        }
+
+        t = Template(template_test1)
+        out = t.render(dict)
+        assert out == result_test1

@@ -205,10 +205,12 @@ class Parser:
         self.in_parse_for = True
         lineno = self.stream.expect("name:for").lineno
         target = self.parse_assign_target(extra_end_rules=("name:in",))
+        self.in_parse_for = False
         self.stream.expect("name:in")
         iter = self.parse_tuple(
             with_condexpr=False, extra_end_rules=("name:recursive",)
         )
+        self.in_parse_for = True
         test = None
         if self.stream.skip_if("name:if"):
             test = self.parse_expression()

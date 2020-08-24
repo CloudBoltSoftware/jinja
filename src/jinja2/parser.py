@@ -606,6 +606,8 @@ class Parser:
                         current_token = next(self.stream)  # get dot token as current
                         if self.stream.look().type == "name":
                             next_token = next(self.stream)  # dot token
+                            if current_token.value == "." and next_token.value == ".":
+                                self.fail("Template does not support empty separators.", next_token.lineno)
                             if self.stream.look().type != "lparen":
                                 name += "." + self.stream.current.value
                             else:

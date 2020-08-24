@@ -1,6 +1,7 @@
-import itertools
-from importlib import reload
 from jinja2 import Template
+from jinja2.exceptions import TemplateSyntaxError
+
+import pytest
 
 
 class Attributes:
@@ -14,15 +15,15 @@ class Attributes:
 class TestDottedNames:
 
     def test_full_dot_key_match(self):
-        dict = {"level0": "000", "level0.level1": "abc", "level0.level1.level2": "def"}
+        test_dict = {"level0": "000", "level0.level1": "abc", "level0.level1.level2": "def"}
         t = Template("{{ level0.level1 }}")
-        out = t.render(dict)
+        out = t.render(test_dict)
         assert out == "abc"
         t = Template("{{ level0.level1.level2 }}")
-        out = t.render(dict)
+        out = t.render(test_dict)
         assert out == "def"
         t = Template("{{ level0 }}")
-        out = t.render(dict)
+        out = t.render(test_dict)
         assert out == "000"
 
     def test_dotted_nested(self):
@@ -31,27 +32,33 @@ class TestDottedNames:
         out2 = t2.render(dict2)
         assert out2 == "e"
 
+    def test_extraneous_dots_nested(self):
+        dict2 = {"a": {"b": {"c.d": "e"}}}
+        with pytest.raises(TemplateSyntaxError):
+            t2 = Template("{{ a.b.c...d }}")
+            _ = t2.render(dict2)
+
     def test_dot_with_list(self):
-        dict = {"a.b": ["1a", "2a"], "a": "nothere"}
+        test_dict = {"a.b": ["1a", "2a"], "a": "nothere"}
         t = Template("{{a.b[0]}}")
-        out = t.render(dict)
+        out = t.render(test_dict)
         assert out == "1a"
         t = Template("{{a.b[0][1]}}")
-        out = t.render(dict)
+        out = t.render(test_dict)
         assert out == "a"
 
     def test_dot_with_attributes(self):
         t = Template("{{ level0.level1.b.next }}")
         ta = Attributes()
-        dict = {"level0": "000", "level0.level1": ta, "level0.level1.level2": "def"}
-        out = t.render(dict)
+        test_dict = {"level0": "000", "level0.level1": ta, "level0.level1.level2": "def"}
+        out = t.render(test_dict)
         assert out == "next level"
 
     def test_dot_with_attributes_return_dictStr(self):
         t = Template("{{ level0.level1.b }}")
         ta = Attributes()
-        dict = {"level0": "000", "level0.level1": ta, "level0.level1.level2": "def"}
-        out = t.render(dict)
+        test_dict = {"level0": "000", "level0.level1": ta, "level0.level1.level2": "def"}
+        out = t.render(test_dict)
         assert out == str({"next": "next level", "next.thing": "thing"})
 
     def test_names(self):
@@ -59,9 +66,9 @@ class TestDottedNames:
             "{{ environment[0]|lower }}{{ platform[0:2]|lower}}{{ team[0]|lower "
             "}}{{ app|lower }}{% if os|lower == 'windows' %}11{% elif os|lower == "
             "'linux' %}15{% else %}17{% endif %}{{ sequence.MySequence }}")
-        dict = {"environment": "PROD", "platform": "Azure", "team": "DevOps",
+        test_dict = {"environment": "PROD", "platform": "Azure", "team": "DevOps",
                 "os": "Windows", "app": "Web", "sequence.MySequence": "001"}
-        out = t.render(dict)
+        out = t.render(test_dict)
         assert out == "pazdweb11001"
 
     def test_for(self):
@@ -69,7 +76,7 @@ class TestDottedNames:
 
         result_test1 = "FOR: KEY: message VAL: Hello, World 2! "
 
-        dict = {
+        test_dict = {
             "level1.level2": {
                 "level3.level4.level5": {
                     "message": "Hello, World!"
@@ -83,5 +90,5 @@ class TestDottedNames:
         }
 
         t = Template(template_test1)
-        out = t.render(dict)
+        out = t.render(test_dict)
         assert out == result_test1
